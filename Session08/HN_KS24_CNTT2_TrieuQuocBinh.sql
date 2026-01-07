@@ -113,3 +113,13 @@ JOIN rooms r ON b.room_id = r.room_id
 GROUP BY r.room_type
 ORDER BY total_bookings DESC
 LIMIT 1;
+
+/*PHẦN III – TRUY VẤN LỒNG
+●	Hiển thị những phòng có giá thuê cao hơn giá trung bình của tất cả các phòng
+*/
+SELECT *
+FROM rooms
+WHERE price_per_day > (
+    SELECT AVG(price_per_day)
+    FROM rooms
+);
