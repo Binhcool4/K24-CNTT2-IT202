@@ -1,0 +1,186 @@
+/*
+ * DATABASE SETUP - SESSION 15 EXAM
+ * Database: StudentManagement
+ */
+
+DROP DATABASE IF EXISTS StudentManagement;
+CREATE DATABASE StudentManagement;
+USE StudentManagement;
+
+-- =============================================
+-- 1. TABLE STRUCTURE
+-- =============================================
+
+-- Table: Students
+CREATE TABLE Students (
+    StudentID CHAR(5) PRIMARY KEY,
+    FullName VARCHAR(50) NOT NULL,
+    TotalDebt DECIMAL(10,2) DEFAULT 0
+);
+
+-- Table: Subjects
+CREATE TABLE Subjects (
+    SubjectID CHAR(5) PRIMARY KEY,
+    SubjectName VARCHAR(50) NOT NULL,
+    Credits INT CHECK (Credits > 0)
+);
+
+-- Table: Grades
+CREATE TABLE Grades (
+    StudentID CHAR(5),
+    SubjectID CHAR(5),
+    Score DECIMAL(4,2) CHECK (Score BETWEEN 0 AND 10),
+    PRIMARY KEY (StudentID, SubjectID),
+    CONSTRAINT FK_Grades_Students FOREIGN KEY (StudentID) REFERENCES Students(StudentID),
+    CONSTRAINT FK_Grades_Subjects FOREIGN KEY (SubjectID) REFERENCES Subjects(SubjectID)
+);
+
+-- Table: GradeLog
+CREATE TABLE GradeLog (
+    LogID INT PRIMARY KEY AUTO_INCREMENT,
+    StudentID CHAR(5),
+    OldScore DECIMAL(4,2),
+    NewScore DECIMAL(4,2),
+    ChangeDate DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================
+-- 2. SEED DATA
+-- =============================================
+
+-- Insert Students
+INSERT INTO Students (StudentID, FullName, TotalDebt) VALUES 
+('SV01', 'Ho Khanh Linh', 5000000),
+('SV03', 'Tran Thi Khanh Huyen', 0);
+
+-- Insert Subjects
+INSERT INTO Subjects (SubjectID, SubjectName, Credits) VALUES 
+('SB01', 'Co so du lieu', 3),
+('SB02', 'Lap trinh Java', 4),
+('SB03', 'Lap trinh C', 3);
+
+-- Insert Grades
+INSERT INTO Grades (StudentID, SubjectID, Score) VALUES 
+('SV01', 'SB01', 8.5), -- Passed
+('SV03', 'SB02', 3.0); -- Failed
+
+-- End of File
+
+
+-- Câu 1 (Trigger – 2đ)
+
+delimiter $$
+create trigger tg_CheckScore
+before insert on Grades
+for each row
+begin
+    if new.Score < 0 then
+        set new.Score = 0;
+    elseif new.Score > 10 then
+        set new.Score = 10;
+    end if;
+end$$
+delimiter ;
+
+-- Câu 2 (Transaction – 2đ
+
+start transaction;
+insert into Students (StudentID, FullName)
+values ('SV02', 'Ha Bich Ngoc');
+
+update Students
+set TotalDebt = 5000000
+where StudentID = 'SV02';
+
+commit;
+
+-- PHẦN B – KHÁ (3 điểm)
+-- Câu 3 (Trigger – 1.5đ)
+
+delimiter $$
+create trigger tg_LogGradeUpdate
+after update on Grades
+for each row
+begin
+    if old.Score <> new.Score then
+        insert into GradeLog (StudentID, OldScore, NewScore, ChangeDate)
+        values (OLD.StudentID, OLD.Score, NEW.Score, now());
+    end if;
+end$$
+delimiter ;
+
+-- Câu 4 (Procedure + Transaction – 1.5đ)
+
+delimiter $$
+create procedure sp_PayTuition()
+begin
+    declare v_NewDebt decimal(10,2);
+
+    start transaction;
+
+    update Students
+    set TotalDebt = TotalDebt - 2000000
+    where StudentID = 'SV01';
+
+    select TotalDebt into v_NewDebt
+    from Students
+    where StudentID = 'SV01';
+
+    if v_NewDebt < 0 then
+        rollback;
+    else
+        commit;
+    end if;
+end$$
+delimiter ;
+
+-- PHẦN C – GIỎI (3 điểm)
+-- Câu 5 (Trigger nâng cao – 1.5đ)
+
+delimiter $$
+create trigger tg_PreventPassUpdate
+before update on Grades
+for each row
+begin
+    if old.Score >= 4.0 then
+        signal sqlstate '45000'
+        set message_text = 'Khong duoc phep sua diem khi sinh vien da qua mon';
+    end if;
+end$$
+delimiter ;
+
+-- Câu 6 (Procedure + Transaction – 1.5đ)
+delimiter $$
+
+create procedure sp_DeleteStudentGrade(
+    in p_StudentID char(5),
+    in p_SubjectID char(5)
+)
+begin
+    declare v_OldScore decimal(4,2);
+
+    start transaction;
+
+    -- Lấy điểm cũ
+    select Score into v_OldScore
+    from Grades
+    where StudentID = p_StudentID
+      and SubjectID = p_SubjectID;
+
+    -- Ghi log trước khi xóa
+    insert into GradeLog (StudentID, OldScore, NewScore, ChangeDate)
+    values (p_StudentID, v_OldScore, null, now());
+
+    -- Xóa điểm
+    delete from Grades
+    where StudentID = p_StudentID
+      and SubjectID = p_SubjectID;
+
+    -- Kiểm tra kết quả xóa
+    if row_count() = 0 then
+        rollback;
+    else
+        commit;
+    end if;
+end$$
+delimiter ;
